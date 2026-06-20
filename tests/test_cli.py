@@ -112,3 +112,39 @@ def test_generate_default_covers_all_rule_ids(tmp_path):
 
     written_files = list(output_dir.glob("*.xml"))
     assert len(written_files) == len(list(RuleId))
+
+
+def test_validate_json_flag_outputs_valid_json(tmp_path):
+    import json
+
+    path = _write_fixture(tmp_path, rule_id=RuleId.CHARSET_VIOLATION)
+    result = runner.invoke(app, ["validate", str(path), "--json"])
+
+    assert result.exit_code == 1  # violation found
+    parsed = json.loads(result.stdout)  # must not raise
+    assert parsed["has_errors"] is True
+    assert parsed["violations"][0]["rule_id"] == "charset_violation"
+
+
+def test_validate_json_flag_on_clean_message(tmp_path):
+    import json
+
+    path = _write_fixture(tmp_path, rule_id=None)
+    result = runner.invoke(app, ["validate", str(path), "--json"])
+
+    assert result.exit_code == 0
+    parsed = json.loads(result.stdout)
+    assert parsed["is_clean"] is True
+    assert parsed["violations"] == []
+
+
+def test_validate_json_and_output_together_is_rejected(tmp_path):
+    path = _write_fixture(tmp_path, rule_id=RuleId.CHARSET_VIOLATION)
+    report_path = tmp_path / "report.md"
+
+    result = runner.invoke(app, ["validate", str(path), "--json", "--output", str(report_path)])
+
+    assert result.exit_code == 1
+    assert not report_path.exists()
+    normalized = " ".join(result.stdout.lower().split())
+    assert "cannot be used together" in normalized

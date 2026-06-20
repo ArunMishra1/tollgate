@@ -1,0 +1,33 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install Tollgate with dev dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Run tests
+        # No ANTHROPIC_API_KEY in CI -- the three live-API tests in
+        # test_explainer.py skip automatically without one (see their
+        # skipif markers). This means CI verifies every deterministic
+        # rule, the generator, the eval harness's scoring logic, and
+        # the CLI/library API -- everything except the one part that
+        # genuinely requires a paid, live model call. That's a
+        # deliberate, documented gap, not an oversight.
+        run: pytest tests/ -v

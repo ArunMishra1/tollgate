@@ -2,6 +2,19 @@
 
 v1 scope: pacs.008.001.08 (FI to FI Customer Credit Transfer) only.
 See docs/SOURCES.md for the source behind every validation rule.
+
+Library usage:
+    from tollgate import check_message, check_file
+
+    result = check_message(xml_string)
+    if result.has_errors:
+        ...
+
+See tollgate.api for the full public API and its design rationale.
 """
 
+from tollgate.api import CheckResult, check_file, check_message
+
 __version__ = "0.1.0"
+
+__all__ = ["check_message", "check_file", "CheckResult", "__version__"]

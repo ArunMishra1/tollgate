@@ -1,0 +1,26 @@
+name: Validate payment files
+
+# Example workflow for repos that GENERATE or transform pacs.008 files
+# and want to catch problems before merge/deploy -- not Tollgate's own
+# CI (Tollgate's own tests run via pytest directly, see below).
+#
+# Copy this file into .github/workflows/ in YOUR repo, adjust the
+# `path` glob to match where your pacs.008 files live, and remove the
+# parts referencing this being an example.
+
+on:
+  pull_request:
+    paths:
+      - "payments/**/*.xml"  # adjust to your repo's actual file locations
+
+jobs:
+  validate-payments:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate pacs.008 files with Tollgate
+        uses: ArunMishra1/tollgate/.github/actions/validate@main
+        with:
+          path: "payments/**/*.xml"
+          fail-on-warning: "false"

@@ -1,0 +1,54 @@
+name: "Tollgate ISO 20022 Validator"
+description: >
+  Validates pacs.008 ISO 20022 payment files in CI, catching the gap
+  between schema-valid and network-acceptable before they're merged or
+  deployed. Fails the build on any error-severity finding.
+author: "Arun"
+branding:
+  icon: "shield"
+  color: "blue"
+
+inputs:
+  path:
+    description: >
+      Glob pattern or path to the pacs.008 XML file(s) to validate.
+      Supports a single file or a glob (e.g. "payments/**/*.xml").
+    required: true
+  fail-on-warning:
+    description: >
+      If "true", treat warning-severity findings (e.g. truncation
+      heuristics) as build failures too, not just errors. Default
+      "false" -- warnings are heuristic signals, not certain
+      failures, per Tollgate's own severity design; most CI pipelines
+      should not hard-fail on a heuristic.
+    required: false
+    default: "false"
+  python-version:
+    description: "Python version to set up for running Tollgate."
+    required: false
+    default: "3.11"
+
+outputs:
+  has-errors:
+    description: "true if any error-severity violation was found across all checked files."
+    value: ${{ steps.run-tollgate.outputs.has-errors }}
+  results-json:
+    description: "Combined JSON results for all checked files."
+    value: ${{ steps.run-tollgate.outputs.results-json }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Install Tollgate
+      shell: bash
+      run: pip install iso-tollgate
+
+    - name: Run Tollgate against matched files
+      id: run-tollgate
+      shell: bash
+      run: python3 "${{ github.action_path }}/scripts/run_validation.py" "${{ inputs.path }}" "${{ inputs.fail-on-warning }}"

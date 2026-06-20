@@ -2,6 +2,7 @@
 
     tollgate validate payment.xml --message-type pacs.008 --output report.md
     tollgate validate payment.xml --explain          # adds AI explanations (calls the Anthropic API)
+    tollgate validate payment.xml --json             # machine-readable output for CI/scripts
     tollgate generate --count 5 --rule-id charset_violation
 
 DESIGN NOTE on --explain: AI explanation is opt-in, not the default.
@@ -14,75 +15,31 @@ anyone running `tollgate validate` without an API key configured hits
 an error immediately, even if they only wanted the deterministic
 findings. With --explain and no key set, this fails clearly via the
 same RuntimeError explain_violation() already raises.
+
+REFACTORED (2026-06-20) to call tollgate.api instead of containing its
+own copy of the check-assembly logic. Previously this file had its own
+_run_all_checks() that duplicated exactly what a library caller would
+need -- now that tollgate.api.check_file()/check_message() exist as
+the real public API, the CLI is a thin presentation layer on top of
+them: one source of truth for "how does the pipeline run," the CLI
+just decides how to print/format the result.
 """
 
+import json as json_module
 from pathlib import Path
 from typing import Optional
 
 import typer
 from rich.console import Console
 
-from tollgate.validation.address_rule import check_address_structure
-from tollgate.validation.charset_rule import check_charset
-from tollgate.validation.mandatory_gap_rule import check_mandatory_gaps
+from tollgate.api import CheckResult, check_file
 from tollgate.validation.models import Violation
-from tollgate.validation.truncation_rule import check_truncation_signals
-from tollgate.validation.xsd_validator import validate_xsd
 
 app = typer.Typer(
     name="tollgate",
     help="Pre-submission safety gate for ISO 20022 payment messages.",
 )
 console = Console()
-
-SCHEMA_PATH = Path(__file__).parent / "schemas" / "pacs.008.001.08.xsd"
-
-
-def _run_all_checks(xml_path: Path) -> list[Violation]:
-    """Runs all five deterministic rules in order. XSD runs first --
-    if a message is too malformed to parse at all, the other four
-    rules (which all assume well-formed XML) would raise confusing
-    lxml parse errors rather than a clean validation result. Their own
-    docstrings note this same assumption.
-    """
-    xml_str = xml_path.read_text(encoding="utf-8")
-
-    violations: list[Violation] = []
-    xsd_violations = validate_xsd(xml_str, SCHEMA_PATH)
-    violations.extend(xsd_violations)
-
-    document_unparseable = any(
-        v.field_path == "(document root)" for v in xsd_violations
-    )
-    if document_unparseable:
-        # validate_xsd() already reports this case as a clean
-        # Violation (see its own docstring for the bug this fixes) --
-        # the other four rules would hit the identical parse failure
-        # via their own lxml.etree.fromstring calls, so skip them
-        # rather than attempt-and-catch, which only produced redundant
-        # noise (the same failure reported twice, once as a yellow
-        # warning and once as the actual finding).
-        return violations
-
-    # The remaining four rules all parse the document themselves via
-    # lxml.etree.fromstring -- if the XML is well-formed enough to
-    # reach this point but still has some other structural problem
-    # XSD caught, these may still raise in edge cases. Catch that
-    # narrower case explicitly so the CLI degrades to "here's what XSD
-    # found" instead of crashing.
-    try:
-        violations.extend(check_charset(xml_str))
-        violations.extend(check_address_structure(xml_str))
-        violations.extend(check_truncation_signals(xml_str))
-        violations.extend(check_mandatory_gaps(xml_str))
-    except Exception as e:
-        console.print(
-            f"[yellow]Warning:[/yellow] could not run all checks -- the "
-            f"document may be too malformed to parse beyond XSD validation. "
-            f"({type(e).__name__}: {e})"
-        )
-
-    return violations
 
 
 @app.command()
@@ -97,15 +54,11 @@ def validate(
     explain: bool = typer.Option(
         False, "--explain", help="Add AI-generated plain-English explanations (calls the Anthropic API; requires ANTHROPIC_API_KEY)."
     ),
+    as_json: bool = typer.Option(
+        False, "--json", help="Print machine-readable JSON instead of a human-readable console report. For CI/scripting use; incompatible with --output."
+    ),
 ) -> None:
     """Run the full validation pipeline against a single message file."""
-    if message_type != "pacs.008":
-        console.print(
-            f"[red]Unsupported message type '{message_type}'.[/red] "
-            "v1 only supports pacs.008.001.08. See README for scope."
-        )
-        raise typer.Exit(code=1)
-
     if not message_path.exists():
         console.print(f"[red]File not found:[/red] {message_path}")
         raise typer.Exit(code=1)
@@ -114,8 +67,19 @@ def validate(
         console.print(f"[red]This is a directory, not a file:[/red] {message_path}")
         raise typer.Exit(code=1)
 
+    if as_json and output:
+        console.print("[red]--json and --output cannot be used together.[/red] --json prints to stdout.")
+        raise typer.Exit(code=1)
+
     try:
-        violations = _run_all_checks(message_path)
+        result = check_file(message_path, message_type=message_type, explain=explain)
+    except ValueError as e:
+        # check_message()/check_file() raise ValueError for an
+        # unsupported message_type, rather than the CLI handling this
+        # itself -- one validation point, in the library, not
+        # duplicated logic in every caller (CLI included).
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(code=1)
     except UnicodeDecodeError:
         console.print(
             f"[red]Could not read {message_path} as UTF-8 text.[/red] "
@@ -126,51 +90,47 @@ def validate(
     except PermissionError:
         console.print(f"[red]Permission denied reading:[/red] {message_path}")
         raise typer.Exit(code=1)
+    except RuntimeError as e:
+        # explain_violation() raises this for a missing API key when
+        # explain=True -- surfaced here rather than inside check_file
+        # so the library function itself doesn't need to know about
+        # console printing.
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(code=1)
 
-    explanations: dict[int, str] = {}
-    if explain:
-        from tollgate.explain.explainer import explain_violation
-
-        for i, v in enumerate(violations):
-            try:
-                explanations[i] = explain_violation(v)
-            except RuntimeError as e:
-                console.print(f"[red]{e}[/red]")
-                raise typer.Exit(code=1)
-
-    if output:
+    if as_json:
+        print(json_module.dumps(result.to_dict(), indent=2))
+    elif output:
         from tollgate.report.markdown_report import render_report
 
-        pairs = [(v, explanations.get(i, "")) for i, v in enumerate(violations)]
+        pairs = [(v, result.explanations.get(i, "")) for i, v in enumerate(result.violations)]
         render_report(pairs, output)
-        console.print(f"Report written to [bold]{output}[/bold] ({len(violations)} finding(s)).")
+        console.print(f"Report written to [bold]{output}[/bold] ({len(result.violations)} finding(s)).")
     else:
-        _print_console_report(violations, explanations, message_path)
+        _print_console_report(result, message_path)
 
-    if violations:
+    if result.has_errors:
         raise typer.Exit(code=1)
 
 
-def _print_console_report(
-    violations: list[Violation], explanations: dict[int, str], message_path: Path
-) -> None:
-    if not violations:
+def _print_console_report(result: CheckResult, message_path: Path) -> None:
+    if result.is_clean:
         console.print(f"[green]✓[/green] {message_path} -- no issues found across all five checks.")
         return
 
-    errors = [v for v in violations if v.severity == "error"]
-    warnings = [v for v in violations if v.severity == "warning"]
+    errors = [v for v in result.violations if v.severity == "error"]
+    warnings = [v for v in result.violations if v.severity == "warning"]
     console.print(
         f"[red]{len(errors)} error(s)[/red], [yellow]{len(warnings)} warning(s)[/yellow] "
         f"found in {message_path}:\n"
     )
 
-    for i, v in enumerate(violations):
+    for i, v in enumerate(result.violations):
         color = "red" if v.severity == "error" else "yellow"
         console.print(f"[{color}]{v.severity.upper()}[/{color}] {v.rule_id.value} -- {v.field_path}")
         console.print(f"  {v.message}")
-        if i in explanations:
-            console.print(f"  [dim]→ {explanations[i]}[/dim]")
+        if i in result.explanations:
+            console.print(f"  [dim]\u2192 {result.explanations[i]}[/dim]")
         console.print()
 
 
@@ -214,7 +174,7 @@ def generate(
             file_path.write_text(corrupted_xml, encoding="utf-8")
             written += 1
 
-    console.print(f"[green]✓[/green] Wrote {written} fixture(s) to {output_dir}")
+    console.print(f"[green]\u2713[/green] Wrote {written} fixture(s) to {output_dir}")
 
 
 if __name__ == "__main__":
