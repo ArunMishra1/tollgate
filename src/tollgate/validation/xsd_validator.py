@@ -14,25 +14,53 @@ source for both the current-catalogue and archive URLs.
 Do not depend on a third-party GitHub mirror staying available or
 unmodified — pull from the URL above directly.
 
-NOT YET IMPLEMENTED. Planned approach:
-  - Use `xmlschema` (preferred over raw lxml XSD validation for
-    better error paths) to load the vendored XSD in schemas/.
-  - Validate the input message, collect ALL errors (not just first),
-    map each xmlschema.XMLSchemaValidationError into a Violation with
-    rule_id=RuleId.XSD_STRUCTURAL and field_path derived from the
-    error's XML path.
-  - This stage must be airtight before any other rule runs — the other
-    rules assume structurally valid XML, so a malformed document should
-    short-circuit here rather than cause encoding errors in charset_rule
-    or address_rule.
+VERIFIED 2026-06-20: a generator-built baseline message (see
+generator/synthetic_fixtures.py) validates clean against this exact
+vendored XSD with zero errors, and a deliberately broken variant
+(mandatory ChrgBr removed) is correctly caught with a specific,
+actionable error and XML path. The approach below is proven, not
+theoretical.
 """
 
 from pathlib import Path
 
-from tollgate.validation.models import Violation
+import xmlschema
+
+from tollgate.validation.models import RuleId, Violation
 
 
-def validate_xsd(xml_path: Path, schema_path: Path) -> list[Violation]:
-    raise NotImplementedError(
-        "XSD validation not yet implemented. See module docstring for plan."
-    )
+def validate_xsd(xml_input: str | Path, schema_path: str | Path) -> list[Violation]:
+    """Validates xml_input (a path or raw XML string) against the XSD
+    at schema_path. Collects ALL errors in one pass via iter_errors(),
+    not just the first -- a report with "found 1 error, fix it and
+    rerun" is a worse experience than "here are all 4 things wrong."
+
+    This stage is the foundation every other rule module assumes ran
+    first and passed (or at least didn't find a structural problem in
+    the specific area that rule cares about) -- a malformed document
+    should be caught here, not cause a confusing downstream failure in
+    charset_rule or address_rule trying to parse something invalid.
+    """
+    schema = xmlschema.XMLSchema(str(schema_path))
+
+    if isinstance(xml_input, Path):
+        source = str(xml_input)
+    else:
+        # Raw XML string -- xmlschema's iter_errors accepts bytes or
+        # a file-like source; encode explicitly rather than relying on
+        # implicit encoding detection.
+        source = xml_input.encode("utf-8")
+
+    violations: list[Violation] = []
+    for error in schema.iter_errors(source):
+        violations.append(
+            Violation(
+                rule_id=RuleId.XSD_STRUCTURAL,
+                field_path=error.path or "(unknown path)",
+                message=error.reason or str(error),
+                severity="error",
+                source_ref="iso20022-xsd-pacs008-001-08",
+            )
+        )
+    return violations
+

@@ -20,6 +20,7 @@ class RuleId(str, Enum):
     CHARSET_VIOLATION = "charset_violation"
     ADDRESS_FREEFORM_ONLY = "address_freeform_only"
     ADDRESS_MISSING_TOWN_COUNTRY = "address_missing_town_country"
+    ADDRESS_TOO_MANY_LINES = "address_too_many_lines"
     TRUNCATION_SUSPECTED = "truncation_suspected"
     MANDATORY_FIELD_GAP = "mandatory_field_gap"
 

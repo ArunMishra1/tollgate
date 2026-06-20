@@ -39,6 +39,19 @@ NOT YET IMPLEMENTED. Planned approach:
     TwnNm/Ctry presence accordingly.
   - Flag RuleId.ADDRESS_FREEFORM_ONLY when a hybrid-end-state role has
     AdrLine present but TwnNm or Ctry absent.
+
+VERIFIED AGAINST THE ACTUAL VENDORED XSD (2026-06-20): PostalAddress24
+defines AdrLine with maxOccurs="7", type Max70Text — the schema itself
+permits up to 7 free-format lines of 70 characters each, which is MORE
+permissive than the Fedwire hybrid-end-state limit of 2 lines. A
+message with, say, 5 AdrLine entries is fully schema-valid XML and
+still violates the usage guideline. This is concrete, schema-level
+proof that this rule earns its place as a separate, non-XSD check —
+XSD validation alone cannot catch this class of violation, because the
+schema is deliberately more permissive than any single network's
+usage guidelines layered on top of it. Codeable rule: also flag
+AdrLine count > 2 for hybrid-end-state roles, not just the
+presence/absence check above.
 """
 
 from pathlib import Path
