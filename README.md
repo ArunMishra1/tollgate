@@ -9,7 +9,7 @@ A pacs.008 payment message can be 100% valid XML, pass every XSD check, and stil
 ## Quickstart
 
 ```bash
-git clone https://github.com/ArunMishra1/tollgate.git
+git clone https://github.com/iso-tollgate/tollgate.git
 cd tollgate
 pip install -e .
 ```
@@ -63,7 +63,7 @@ Tollgate is a developer-facing sanity check, not a replacement for SWIFT certifi
 |---|---|
 | **CLI** | `tollgate validate payment.xml` · `tollgate validate-dir payments/` |
 | **Python library** | `from tollgate import check_message, check_file, check_directory` |
-| **CI** | `uses: ArunMishra1/tollgate/.github/actions/validate@main` |
+| **CI** | `uses: iso-tollgate/tollgate/.github/actions/validate@main` |
 
 Details and examples for all three: [`docs/usage.md`](docs/usage.md).
 
@@ -73,7 +73,7 @@ Details and examples for all three: [`docs/usage.md`](docs/usage.md).
 
 `--explain` has been live-tested against the real model: it correctly names the violated field and cause, and correctly hedges on warning-severity (heuristic) findings rather than asserting them as certain failures — verified, not assumed.
 
-Not yet on PyPI or Homebrew — clone-and-install is the path for now. A Homebrew tap is scaffolded in [`homebrew-tollgate/`](https://github.com/ArunMishra1/homebrew-tollgate) for once a tagged release exists.
+Not yet on PyPI or Homebrew — clone-and-install is the path for now. A Homebrew tap is scaffolded in [`homebrew-tollgate/`](https://github.com/iso-tollgate/homebrew-tollgate) for once a tagged release exists.
 
 ## License
 

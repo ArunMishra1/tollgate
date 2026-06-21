@@ -5,7 +5,7 @@ Every example below was run against the actual codebase before being written dow
 ## Install
 
 ```bash
-git clone https://github.com/ArunMishra1/tollgate.git
+git clone https://github.com/iso-tollgate/tollgate.git
 cd tollgate
 pip install -e .
 ```
@@ -110,7 +110,7 @@ Drop `--rule-id` to generate fixtures for all seven gotcha types at once.
 Check payment files on every PR, fail the build on errors:
 
 ```yaml
-- uses: ArunMishra1/tollgate/.github/actions/validate@main
+- uses: iso-tollgate/tollgate/.github/actions/validate@main
   with:
     path: "payments/**/*.xml"
 ```

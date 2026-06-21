@@ -20,7 +20,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Validate pacs.008 files with Tollgate
-        uses: ArunMishra1/tollgate/.github/actions/validate@main
+        uses: iso-tollgate/tollgate/.github/actions/validate@main
         with:
           path: "payments/**/*.xml"
           fail-on-warning: "false"
