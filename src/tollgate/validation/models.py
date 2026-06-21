@@ -23,6 +23,7 @@ class RuleId(str, Enum):
     ADDRESS_TOO_MANY_LINES = "address_too_many_lines"
     TRUNCATION_SUSPECTED = "truncation_suspected"
     MANDATORY_FIELD_GAP = "mandatory_field_gap"
+    CURRENCY_DECIMAL_MISMATCH = "currency_decimal_mismatch"
 
 
 @dataclass

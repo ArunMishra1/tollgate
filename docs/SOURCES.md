@@ -282,3 +282,53 @@ issue in the first place.
 the deterministic message (already vetted as safe per above), and
 source_ref. None of these should constitute PII on their own --
 field_path is a structural XML path (e.g. "Dbtr/Nm"), not a value.
+
+## sixth-rule-candidate-currency-decimal-precision (RESEARCH ONLY -- NOT IMPLEMENTED)
+
+Researched 2026-06-21, NOT yet built into a validation rule. Recorded
+here so the research is preserved and sourced before any code gets
+written, per this project's own convention -- research and citation
+first, implementation second.
+
+**THE GOTCHA:** ISO 4217 defines a "minor unit" exponent per currency
+-- how many decimal places that currency actually supports. Most
+currencies use 2 (USD, EUR, GBP). Some use 0 -- no decimals at all
+(JPY, KRW, VND, and others). A few use 3 (KWD, BHD, OMR, JOD, TND,
+LYD, IQD). Source: ISO.org's own page on ISO 4217
+(https://www.iso.org/iso-4217-currency-codes.html), cross-referenced
+against three independent payment-processing technical references
+(Adyen, Datatrans, LegalClarity) which all state the same exponent
+groupings consistently.
+
+**VERIFIED AGAINST THE ACTUAL VENDORED XSD (2026-06-21):**
+ActiveCurrencyAndAmount_SimpleType (used for IntrBkSttlmAmt) defines
+fractionDigits="5", totalDigits="18" -- the schema permits up to 5
+decimal places for ANY currency, regardless of what that specific
+currency's own ISO 4217 minor-unit rule actually allows. This is the
+same shape as every other rule in this project: the schema is
+deliberately more permissive than real-world correctness rules layered
+on top of it. A JPY amount like "1000.50" (JPY supports 0 decimal
+places) would pass XSD validation cleanly and still be objectively
+wrong -- not a network-rejection case like charset_violation or
+address_too_many_lines, but a different failure mode: a value that's
+schema-valid and simply incorrect, which a receiving system might
+silently misinterpret (treating 1000.50 JPY as a fractional-yen amount
+that doesn't exist) rather than reject outright. Worth flagging this
+distinction if this rule is ever built -- the explanation for this one
+should be careful not to overstate it as a guaranteed rejection the
+way the address/charset rules can, since the actual failure mode here
+(silent misinterpretation vs hard rejection) is less certain and
+depends on the receiving system's own handling.
+
+**What would be needed to actually build this:** a currency ->
+exponent lookup table (the three tiers above), checked against the
+`Ccy` attribute already present on amount elements like
+IntrBkSttlmAmt. The decimal-place count of the element's text content
+would need to be checked against the matching currency's expected
+exponent. NOT YET BUILT. Note for whoever picks this up: the lookup
+table itself needs to be sourced directly from ISO 4217's official
+published table (via SIX Group, who maintain it on ISO's behalf), not
+copied from a secondary blog post's partial list -- the sources found
+during this research were consistent with each other but none of them
+is the primary published standard itself.
+

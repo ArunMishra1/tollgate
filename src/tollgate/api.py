@@ -34,6 +34,7 @@ from pathlib import Path
 
 from tollgate.validation.address_rule import check_address_structure
 from tollgate.validation.charset_rule import check_charset
+from tollgate.validation.currency_rule import check_currency_decimal_precision
 from tollgate.validation.mandatory_gap_rule import check_mandatory_gaps
 from tollgate.validation.models import Violation
 from tollgate.validation.truncation_rule import check_truncation_signals
@@ -279,7 +280,7 @@ def _run_all_checks(xml_str: str) -> list[Violation]:
         v.field_path == "(document root)" for v in xsd_violations
     )
     if document_unparseable:
-        # The other four rules would hit the identical parse failure
+        # The other five rules would hit the identical parse failure
         # via their own lxml.etree.fromstring calls -- skip them
         # rather than attempt-and-catch, which only produces redundant
         # noise (the same failure reported twice).
@@ -290,6 +291,7 @@ def _run_all_checks(xml_str: str) -> list[Violation]:
         violations.extend(check_address_structure(xml_str))
         violations.extend(check_truncation_signals(xml_str))
         violations.extend(check_mandatory_gaps(xml_str))
+        violations.extend(check_currency_decimal_precision(xml_str))
     except Exception:
         # A narrower parse failure than "completely unparseable" --
         # XSD validation passed (or found schema-conformance issues

@@ -188,7 +188,21 @@ def build_valid_baseline(
     debtor_name = rng.choice(FICTIONAL_DEBTOR_NAMES)
     creditor_name = rng.choice(FICTIONAL_CREDITOR_NAMES)
     currency = rng.choice(CURRENCIES)
-    amount = f"{rng.uniform(100, 50000):.2f}"
+    # BUG FOUND AND FIXED (2026-06-21), by the new currency_rule.py
+    # cross-checking the generator's own output: amount was always
+    # formatted with exactly 2 decimal places regardless of which
+    # currency was chosen, even though CURRENCIES includes "JPY",
+    # which supports 0 decimal places per ISO 4217. The baseline
+    # generator had been silently producing decimally-invalid JPY
+    # fixtures since the very first session this was written -- never
+    # caught before because no rule checked decimal precision until
+    # this one existed. Fixed by formatting JPY (and any future
+    # zero-decimal currency added to CURRENCIES) without a decimal
+    # point at all.
+    if currency == "JPY":
+        amount = f"{int(rng.uniform(100, 50000))}"
+    else:
+        amount = f"{rng.uniform(100, 50000):.2f}"
 
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
@@ -429,6 +443,28 @@ def _inject_mandatory_field_gap(root: etree._Element, nsmap: dict) -> tuple[etre
     return root, label
 
 
+def _inject_currency_decimal_mismatch(root: etree._Element, nsmap: dict) -> tuple[etree._Element, GroundTruthLabel]:
+    """Forces the settlement amount's currency to JPY (regardless of
+    whichever currency the baseline happened to randomly pick) and
+    sets a value with 2 decimal places. JPY supports 0 decimal places
+    per ISO 4217 -- this is the same case verified in
+    currency_rule.py's own tests, and is also what surfaced the real
+    generator bug (build_valid_baseline always formatted with .2f
+    regardless of currency) found and fixed in this same session.
+    """
+    amt_element = root.find(".//p:IntrBkSttlmAmt", nsmap)
+    amt_element.set("Ccy", "JPY")
+    amt_element.text = "1000.50"
+
+    label = GroundTruthLabel(
+        rule_id=RuleId.CURRENCY_DECIMAL_MISMATCH,
+        field_path="FIToFICstmrCdtTrf/CdtTrfTxInf/IntrBkSttlmAmt",
+        injected_value="1000.50 (Ccy=JPY)",
+        expected_violation_type="JPY amount with 2 decimal places; JPY supports 0",
+    )
+    return root, label
+
+
 _INJECTORS = {
     RuleId.XSD_STRUCTURAL: _inject_xsd_structural,
     RuleId.CHARSET_VIOLATION: _inject_charset_violation,
@@ -437,6 +473,7 @@ _INJECTORS = {
     RuleId.ADDRESS_TOO_MANY_LINES: _inject_address_too_many_lines,
     RuleId.TRUNCATION_SUSPECTED: _inject_truncation_suspected,
     RuleId.MANDATORY_FIELD_GAP: _inject_mandatory_field_gap,
+    RuleId.CURRENCY_DECIMAL_MISMATCH: _inject_currency_decimal_mismatch,
 }
 
 

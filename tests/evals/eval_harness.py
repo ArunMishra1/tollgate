@@ -54,6 +54,7 @@ from tollgate.generator.synthetic_fixtures import (
 )
 from tollgate.validation.address_rule import check_address_structure
 from tollgate.validation.charset_rule import check_charset
+from tollgate.validation.currency_rule import check_currency_decimal_precision
 from tollgate.validation.mandatory_gap_rule import check_mandatory_gaps
 from tollgate.validation.models import RuleId, Violation
 from tollgate.validation.truncation_rule import check_truncation_signals
@@ -88,6 +89,7 @@ RULE_ID_SYNONYMS: dict[RuleId, list[str]] = {
     RuleId.ADDRESS_TOO_MANY_LINES: ["too many", "address lines", "exceeds", "line limit"],
     RuleId.TRUNCATION_SUSPECTED: ["truncat", "legacy", "mt line", "cut off", "cut-off", "boundary"],
     RuleId.MANDATORY_FIELD_GAP: ["mandatory", "fedwire", "network-specific", "network specific"],
+    RuleId.CURRENCY_DECIMAL_MISMATCH: ["decimal", "currency", "iso 4217", "minor unit", "precision"],
 }
 
 DETECTOR_FOR_RULE: dict[RuleId, str] = {
@@ -98,6 +100,7 @@ DETECTOR_FOR_RULE: dict[RuleId, str] = {
     RuleId.ADDRESS_TOO_MANY_LINES: "address",
     RuleId.TRUNCATION_SUSPECTED: "truncation",
     RuleId.MANDATORY_FIELD_GAP: "mandatory_gap",
+    RuleId.CURRENCY_DECIMAL_MISMATCH: "currency",
 }
 
 
@@ -193,6 +196,8 @@ def _run_detector_for_rule(rule_id: RuleId, xml_str: str, schema_path: Path) -> 
         return check_truncation_signals(xml_str)
     if rule_id == RuleId.MANDATORY_FIELD_GAP:
         return check_mandatory_gaps(xml_str)
+    if rule_id == RuleId.CURRENCY_DECIMAL_MISMATCH:
+        return check_currency_decimal_precision(xml_str)
     raise ValueError(f"No detector mapped for {rule_id}")
 
 

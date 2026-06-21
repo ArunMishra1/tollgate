@@ -20,6 +20,20 @@ vendored XSD with zero errors, and a deliberately broken variant
 (mandatory ChrgBr removed) is correctly caught with a specific,
 actionable error and XML path. The approach below is proven, not
 theoretical.
+
+PERFORMANCE BUG FOUND AND FIXED during a stress-test pass (2026-06-21):
+checking 200 generated files via check_directory() took ~150ms/file
+(~30s total). Profiling (cProfile) showed essentially all of that time
+was xmlschema.XMLSchema(str(schema_path)) -- recompiling the ENTIRE
+XSD from disk on every single call, even though the schema never
+changes between files in a batch. Fixed with a simple module-level
+cache keyed by the resolved schema path string, so the same schema
+object is reused across repeated calls instead of being rebuilt from
+scratch each time. Not using functools.lru_cache here deliberately --
+xml_input/schema_path can be either str or Path, and caching only
+needs to key on the schema path argument, not the full call signature,
+so an explicit dict is clearer than fighting lru_cache's hashing
+requirements for a mixed-type signature.
 """
 
 from pathlib import Path
@@ -27,6 +41,19 @@ from pathlib import Path
 import xmlschema
 
 from tollgate.validation.models import RuleId, Violation
+
+# Module-level cache: resolved schema path string -> compiled
+# xmlschema.XMLSchema object. See PERFORMANCE BUG note above -- this
+# is the fix for re-parsing the entire XSD on every single
+# validate_xsd() call, which dominated batch-checking runtime.
+_SCHEMA_CACHE: dict[str, xmlschema.XMLSchema] = {}
+
+
+def _get_compiled_schema(schema_path: str | Path) -> xmlschema.XMLSchema:
+    key = str(schema_path)
+    if key not in _SCHEMA_CACHE:
+        _SCHEMA_CACHE[key] = xmlschema.XMLSchema(key)
+    return _SCHEMA_CACHE[key]
 
 
 def validate_xsd(xml_input: str | Path, schema_path: str | Path) -> list[Violation]:
@@ -63,7 +90,7 @@ def validate_xsd(xml_input: str | Path, schema_path: str | Path) -> list[Violati
     (an empty file). Checked explicitly for and reported with a clear
     message before reaching xmlschema at all.
     """
-    schema = xmlschema.XMLSchema(str(schema_path))
+    schema = _get_compiled_schema(schema_path)
 
     is_empty = (
         (isinstance(xml_input, Path) and xml_input.stat().st_size == 0)
